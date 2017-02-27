@@ -1,0 +1,1 @@
+python runserver.py < test/init.input

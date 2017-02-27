@@ -7,10 +7,6 @@ import math
 
 # действия, которые могут быть выполнен
 
-class Action:
-    def command(self):
-        pass
-
 
 # Описание используемых предметов
 
@@ -69,6 +65,7 @@ class World:
     def update(self):
         """Обновление статуса текущего мира"""
         entity_count = int(raw_input())  # the number of entities (e.g. factories and troops)
+        print >> sys.stderr, entity_count
 
         self.troops = []
 
@@ -113,10 +110,82 @@ class World:
 
 # Описание стратегии для принятия решения о базе
 
+class ActionType:
+    """ Определяем список возможных действий """
+    PROBLEM_MOVE = "PROBLEM_MOVE"
+    MOVE = "MOVE"
+
+class Action:
+    """Определение действия выполняемого для объекта """
+    def __init__(self, action_from, action_to, action_method, action_kwarg):
+        # 
+        self.action_type = None
+        # 
+        self.action_target = None
+        # набор аргументов
+        self.argv = None 
+
 class Strategy:
     """ Применяемая стратегия """
-    def __init__(self, world):
+    def __init__(self):
         self.world = world
+
+        """Определяем перечень доступных евристик для стратегии"""
+        states = [
+            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.find_near_empty)
+        ]
+        return states
+
+    def find_problem(self, factory):
+        """ ищу проблему которую пытаемся решить. По умолчанию это будет движение"""
+        problem = ActionType.MOVE
+
+        return problem
+
+
+    def find_command(self, world):
+        return "WAIT"
+
+
+    def find_action(self, state, for_wizard, prev_action=None):
+        """Определяем правило, которое работало по набору состояний"""
+        prev_state = None
+        current_rule = None
+
+        rules = self.get_rules(for_wizard, prev_action)
+
+        filter_lambda = lambda x: x[0] == state and (x[2] is None or\
+            (isinstance(x[3], list) and x[2](*x[3])) or\
+            (not isinstance(x[3], list) and x[2](x[3]))\
+        )
+
+        level = ""
+        rules_comment = ""
+        while state != prev_state:
+            prev_state = state
+
+            try:
+                filter_rules = filter(filter_lambda, rules)
+            except Exception:
+                print "Current state: %s\n%s" % (Strategy.desc(state), rules_comment)    
+                raise NotImplementedError        
+
+            for rule in filter_rules:
+                state = rule[1]
+                current_rule = rule
+                break
+
+
+            if prev_state != state:
+                rules_comment += "%s%s\n" % (level, Strategy.desc(state))
+                level = "%s " % level
+
+        if (current_rule[3] == None):
+            print rules_comment
+
+        return current_rule[1], current_rule[3]
+
+
 
     def get_player_command(self):
         return "WAIT"
@@ -128,10 +197,14 @@ world = World()
 
 world.init()
 
+strategy = Strategy(world)
+
 while True:
 
     world.update()
-    strategy = Strategy(world)
+
+    strategy.find_command(world)
+
     print strategy.get_player_command()
 
-    
+    break
