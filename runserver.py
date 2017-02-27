@@ -127,23 +127,24 @@ class Action:
 
 class Strategy:
     """ Применяемая стратегия """
-    def __init__(self):
+    def __init__(self, world):
         self.world = world
 
         """Определяем перечень доступных евристик для стратегии"""
         states = [
-            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.find_near_empty)
+            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.world.find_near_empty)
         ]
         return states
 
     def find_problem(self, factory):
         """ ищу проблему которую пытаемся решить. По умолчанию это будет движение"""
+
         problem = ActionType.MOVE
 
         return problem
 
 
-    def find_command(self, world):
+    def find_command(self):
         return "WAIT"
 
 
@@ -203,7 +204,7 @@ while True:
 
     world.update()
 
-    strategy.find_command(world)
+    strategy.find_command()
 
     print strategy.get_player_command()
 
