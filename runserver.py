@@ -117,13 +117,19 @@ class ActionType:
 
 class Action:
     """Определение действия выполняемого для объекта """
-    def __init__(self, action_from, action_to, action_method, action_kwarg):
-        # 
-        self.action_type = None
-        # 
-        self.action_target = None
-        # набор аргументов
-        self.argv = None 
+    def __init__(self, action_from, action_to, action_method):
+        self.action_from = action_from
+        self.action_to = action_to
+        self.method = action_method
+
+    def run_method(self, kwargs):
+        result = False
+        method_result = None
+
+        if method_result is None:
+            result = False
+        else: 
+            result = True
 
 class Strategy:
     """ Применяемая стратегия """
@@ -131,10 +137,9 @@ class Strategy:
         self.world = world
 
         """Определяем перечень доступных евристик для стратегии"""
-        states = [
-            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.world.find_near_empty)
+        self.states = [
+            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.find_near_empty)
         ]
-        return states
 
     def find_problem(self, factory):
         """ ищу проблему которую пытаемся решить. По умолчанию это будет движение"""
@@ -142,6 +147,9 @@ class Strategy:
         problem = ActionType.MOVE
 
         return problem
+
+    def find_near_empty(self):
+        return None
 
 
     def find_command(self):
