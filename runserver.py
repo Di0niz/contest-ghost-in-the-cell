@@ -239,35 +239,64 @@ class DummyStrategy:
     def get_actions(self):
         f = self.world.factories
 
+        primary_target = filter(lambda x: x.player != 1 and x.production > 0, f) 
+        else_target = filter(lambda x: x.player != 1 and x.production == 0, f)
+        vertex = {}
+        attacks = {}
+
+        last_target = None
+
+        for base in filter(lambda x: x.num_cyborg > 1 and x.player == 1, f):
+
+            # определяем количество доступных ботов
+            num_cyborg = base.num_cyborg
+
+            while num_cyborg > 0:
+                attack, target, path = None, None, None
+
+                if len(primary_target) > 0:
+                    path = self.world.find_shortest(base, primary_target)
+
+                elif len(else_target) > 0:
+                    path = self.world.find_shortest(base, else_target)
+
+                if path is not None:
+
+                    attack, target = path[1], path[-1]
+
+                    if target not in vertex:
+                        vertex[target] = target.num_cyborg + 1
+
+                    cur_cyborg = min(vertex[target], num_cyborg)
+
+                    num_cyborg = num_cyborg - cur_cyborg
+                    vertex[target] = vertex[target] - cur_cyborg
+
+
+                    if vertex[target] == 0:
+                        primary_target = [item for item in primary_target if item not in [target]]
+                        else_target = [item for item in else_target if item not in [target]]
+                        last_target = target
+
+                    if attack not in attacks:
+                        attacks[attack] = {}
+
+                    if base not in attacks[attack]:
+                        attacks[attack][base] = cur_cyborg
+                    else:
+                        attacks[attack][base] = attacks[attack][base] + cur_cyborg
+                else:
+  
+                    num_cyborg = 0
+
         actions = []
-        for base in filter(lambda x: x.num_cyborg > 0 and x.player == 1, f):
-
-            attack = None
-            entities_dict = filter(lambda x: x.player == 0 and x.production > 0, f) 
-
-            if len(entities_dict) > 0:
-                path = self.world.find_shortest(base, entities_dict)
-                attack = path[1]
-
-            if attack is None:
-                entities_dict = filter(lambda x: x.player == -1, f)
-                if len(entities_dict) > 0:
-                    path = self.world.find_shortest(base, entities_dict)
-                    attack = path[1]
-
-            if attack is None:
-                entities_dict = filter(lambda x: x.player == 0, f)
-
-                if len(entities_dict) > 0:
-                    path = self.world.find_shortest(base, entities_dict)
-                    attack = path[1]
-
-
-            if not (attack is None):
-                actions.append( "MOVE %d %d %d" % (base.entity_id, attack.entity_id, base.num_cyborg))
-        
-        if len(actions) == 0:
+        if len(attacks) == 0:
             actions.append("WAIT")
+        else:
+            for attack in attacks.keys():
+                for base in attacks[attack].keys():
+                    actions.append( "MOVE %d %d %d" % (base.entity_id, attack.entity_id, attacks[attack][base]))
+
         return ";".join(actions)
 
 class Strategy:
