@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import math
 
 # раздел описания структуры программы
 
@@ -245,11 +244,18 @@ class DummyStrategy:
         attacks = {}
 
         last_target = None
+        
+        facilities = filter(lambda x: x.num_cyborg > 2 and x.player == 1, f)
 
-        for base in filter(lambda x: x.num_cyborg > 1 and x.player == 1, f):
+        if DEBUG:
+            print >> sys.stderr, facilities
+        for base in facilities:
 
             # определяем количество доступных ботов
             num_cyborg = base.num_cyborg
+            
+            if DEBUG:
+                print >> sys.stderr, base, base.num_cyborg            
 
             while num_cyborg > 0:
                 attack, target, path = None, None, None
@@ -259,6 +265,10 @@ class DummyStrategy:
 
                 elif len(else_target) > 0:
                     path = self.world.find_shortest(base, else_target)
+                    
+                if DEBUG:
+                    print >> sys.stderr, base, path, base.num_cyborg
+                    
 
                 if path is not None:
 
@@ -274,9 +284,11 @@ class DummyStrategy:
 
 
                     if vertex[target] == 0:
-                        primary_target = [item for item in primary_target if item not in [target]]
+                        if len(primary_target) > 1:
+                            primary_target = [item for item in primary_target if item not in [target]]
                         else_target = [item for item in else_target if item not in [target]]
-                        last_target = target
+                        cur_cyborg = cur_cyborg + num_cyborg
+                        num_cyborg = 0
 
                     if attack not in attacks:
                         attacks[attack] = {}
@@ -284,10 +296,17 @@ class DummyStrategy:
                     if base not in attacks[attack]:
                         attacks[attack][base] = cur_cyborg
                     else:
-                        attacks[attack][base] = attacks[attack][base] + cur_cyborg
+                        attacks[attack][base] = cur_cyborg + attacks[attack][base]
                 else:
-  
                     num_cyborg = 0
+                    
+                if DEBUG:
+                    print >> sys.stderr, base, path, " - ", base.num_cyborg, num_cyborg
+            if DEBUG:
+                print >> sys.stderr, base, attacks
+        
+        if DEBUG:
+            print >> sys.stderr, attacks
 
         actions = []
         if len(attacks) == 0:
@@ -295,77 +314,12 @@ class DummyStrategy:
         else:
             for attack in attacks.keys():
                 for base in attacks[attack].keys():
-                    actions.append( "MOVE %d %d %d" % (base.entity_id, attack.entity_id, attacks[attack][base]))
+                    command = "MOVE %d %d %d" % (base.entity_id, attack.entity_id, attacks[attack][base])
+                    if DEBUG:
+                        print >> sys.stderr, command, base.num_cyborg
+                    actions.append(command)
 
         return ";".join(actions)
-
-class Strategy:
-    """ Применяемая стратегия """
-    def __init__(self, world):
-        self.world = world
-
-        """Определяем перечень доступных евристик для стратегии"""
-        self.states = [
-            Action(ActionType.PROBLEM_MOVE, ActionType.MOVE, self.find_near_empty)
-        ]
-
-    def find_problem(self, factory):
-        """ ищу проблему которую пытаемся решить. По умолчанию это будет движение"""
-
-        problem = ActionType.MOVE
-
-        return problem
-
-    def find_near_empty(self, agrs):
-        return False
-
-
-    def find_command(self):
-        return "WAIT"
-
-
-    def find_action(self, state, for_wizard, prev_action=None):
-        """Определяем правило, которое работало по набору состояний"""
-        prev_state = None
-        current_rule = None
-
-        rules = self.get_rules(for_wizard, prev_action)
-
-        filter_lambda = lambda x: x[0] == state and (x[2] is None or\
-            (isinstance(x[3], list) and x[2](*x[3])) or\
-            (not isinstance(x[3], list) and x[2](x[3]))\
-        )
-
-        level = ""
-        rules_comment = ""
-        while state != prev_state:
-            prev_state = state
-
-            try:
-                filter_rules = filter(filter_lambda, rules)
-            except Exception:
-                print "Current state: %s\n%s" % (Strategy.desc(state), rules_comment)    
-                raise NotImplementedError        
-
-            for rule in filter_rules:
-                state = rule[1]
-                current_rule = rule
-                break
-
-
-            if prev_state != state:
-                rules_comment += "%s%s\n" % (level, Strategy.desc(state))
-                level = "%s " % level
-
-        if (current_rule[3] == None):
-            print rules_comment
-
-        return current_rule[1], current_rule[3]
-
-
-
-    def get_player_command(self):
-        return "WAIT"
 
 
 # основная часть программы
@@ -389,4 +343,3 @@ while True:
 
     print strategy.get_actions()
 
-    break
