@@ -12,46 +12,59 @@ import sys
 DEBUG = True
 
 
-class EntityType:
+class EntityType(object):
+    """Описание внутриигровых объектов"""
     FACTORY = "FACTORY"
     TROOP = "TROOP"
 
 
-class Entity:
+class Entity(object):
+    """Определение базового класса внутриигровых объектов"""
     def __init__(self):
         self.player = 0
         self.entity_id = 0
-    
-    def __str__(self):
+
+    def to_str(self):
         return "%d" % self.entity_id
+
+    def __str__(self):
+        return self.to_str()
 
     def __repr__(self):
-        return "%d" % self.entity_id
+        return self.to_str()
 
 class FactoryEntity(Entity):
+    """Описание фабрики"""
     def __init__(self):
         Entity.__init__(self)
         self.num_cyborg = 0
         self.production = 0
-    def __str__(self):
+    def to_str(self):
         return "F%d" % self.entity_id
 
-    def __repr__(self):
-        return "F%d" % self.entity_id
 class TroopEntity(Entity):
+    """Описание пехоты"""
     def __init__(self):
         Entity.__init__(self)
         self.factory_from = 0
         self.factory_to = 0
         self.num_cyborg = 0
         self.time_remain = 0
-    def __str__(self):
+
+    def to_str(self):
         return "T%d" % self.entity_id
 
-    def __repr__(self):
-        return "T%d" % self.entity_id
+LAMBDA_EMPTY_PRODUCTION = lambda x: x.player == 0 and x.production > 0
+LAMBDA_MY_ARMY = lambda x: x.player == 1 and x.num_cyborg > 0
+LAMBDA_ENEMY_ARMY = lambda x: x.player == -1 and x.num_cyborg > 0
+LAMBDA_EMPTY = lambda x: None
+LAMBDA_ZERO = lambda x: 0
 
-class World:
+
+class World(object):
+    """Описание игрового мира"""
+
+
     def __init__(self):
         """ Определяем список объектов доступных для класса """
         self.troops = []
@@ -65,7 +78,7 @@ class World:
         link_count = int(raw_input())  # the number of links between factories
 
         # создаем пустой массив
-        self.factories = map(lambda x: None, xrange(self.num_factory))
+        self.factories = map(LAMBDA_EMPTY, xrange(self.num_factory))
 
 
         # отображение вложенных данных
@@ -74,6 +87,7 @@ class World:
             print >> sys.stderr, link_count
 
         self.create_links(self.num_factory)
+
         for i in xrange(link_count):
             raw = raw_input()
             if DEBUG:
@@ -135,7 +149,7 @@ class World:
         vertex = {node:(0, None)}
 
         # пока есть что обходить
-        while not (node == None or len(frontier)==0):
+        while not (node is None or len(frontier) == 0):
 
             node = frontier.pop()
 
@@ -143,12 +157,10 @@ class World:
 
             distance = vertex[node][0]
 
-            next_node = None
-
             for n in self.get_nodes(node):
                 if n not in explored:
 
-                    # определяем вес связи 
+                    # определяем вес связи
                     next_distance = distance + self.links[node.entity_id][n.entity_id]
 
                     # помечаем текущую вершину
@@ -161,8 +173,8 @@ class World:
 
 
     def find_shortest(self, start, goals):
+        """Описание алгоритма поиска кратчайшего пути"""
         vertex = self.uniform_cost_search(start, goals)
-
         # востанавливаем цепочку
         goal = goals[0]
         for n in goals:
@@ -172,13 +184,14 @@ class World:
         node = vertex[goal][1]
         solution = [goal]
         while node is not None:
-            solution.insert(0,node)
+            solution.insert(0, node)
             node = vertex[node][1]
 
         return solution
 
-    
+
     def get_nodes(self, node):
+        """Определение списка соседних вершин"""
 
         i = node.entity_id
 
@@ -200,11 +213,8 @@ class World:
     def create_links(self, size):
         """Определяем создание новых элементов"""
         for i in xrange(size):
-            l = []
-            for j in xrange(size):
-                l.append(0)
-            self.links.append(l)
-        return l
+            zero_list = map(LAMBDA_ZERO, xrange(size))
+            self.links.append(zero_list)
 
 
 # Описание стратегии для принятия решения о базе
@@ -213,6 +223,7 @@ class ActionType:
     """ Определяем список возможных действий """
     PROBLEM_MOVE = "PROBLEM_MOVE"
     MOVE = "MOVE"
+    ATTACK_EMPTY_BASE = "ATTACK_EMPTY_BASE"
 
 class Action:
     """Определение действия выполняемого для объекта """
@@ -227,11 +238,87 @@ class Action:
 
         if method_result is None:
             result = False
-        else: 
+        else:
             result = True
 
-class DummyStrategy:
 
+class SmartStrategy:
+    """ Применяемая стратегия """
+    def __init__(self, world):
+        self.world = world
+
+        self.actions = []
+
+        """Определяем перечень доступных евристик для стратегии"""
+        self.moves = {}
+
+    def move_troop(self, base, next_point, attack, num_cyborg):
+        """Осуществляем передвижения киборгов"""
+        if base.num_cyborg >= num_cyborg:
+            base.num_cyborg = base.num_cyborg - num_cyborg
+        else:
+            base.num_cyborg = 0
+
+        if attack.num_cyborg >= num_cyborg:
+            attack.num_cyborg = attack.num_cyborg - num_cyborg
+        else:
+            attack.num_cyborg = 0
+
+        key = (base, next_point)
+
+        if key not in self.moves:
+            self.moves[key] = num_cyborg
+        else:
+            self.moves[key] = self.moves[key] + num_cyborg
+
+    def parse_commands(self):
+        """Преобразуем список команд в действия"""
+        actions = []
+        for command in self.moves:
+            base, next_point = command
+            action = "MOVE %d %d %d" % (base.entity_id, next_point.entity_id, self.moves[command])
+            actions.append(action)
+
+        return actions
+
+    def attack_targets(self, targets):
+        """Определяем направление по цели"""
+
+        if len(targets) == 0:
+            return False
+
+        for base in filter(LAMBDA_MY_ARMY, self.world.factories):
+
+            do_while = base.num_cyborg > 0 and len(targets) > 0
+
+            while do_while:
+                path = self.world.find_shortest(base, targets)
+                near, target = path[1], path[-1]
+
+                self.move_troop(base, near, target, min(target.num_cyborg, base.num_cyborg))
+
+                targets = [item for item in targets if item not in [target]]
+
+                do_while = base.num_cyborg > 0 and len(targets) > 0
+
+
+        return True # (ActionType.ATTACK_ENEMY, args)
+
+    def get_actions(self):
+        """получаем цепочку действий"""
+        self.attack_targets(filter(LAMBDA_EMPTY_PRODUCTION, self.world.factories))
+        self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.world.factories))
+        self.attack_targets(filter(LAMBDA_EMPTY, self.world.factories))
+
+        actions = self.parse_commands()
+
+        if len(actions) == 0:
+            actions = ["WAIT"]
+
+        return ";".join(actions)
+
+class DummyStrategy:
+    """Простая стратегия для отладки отдельных элементов"""
     def __init__(self, world):
         self.world = world
 
@@ -244,31 +331,23 @@ class DummyStrategy:
         attacks = {}
 
         last_target = None
-        
-        facilities = filter(lambda x: x.num_cyborg > 2 and x.player == 1, f)
 
-        if DEBUG:
-            print >> sys.stderr, facilities
+        facilities = filter(lambda x: x.num_cyborg > 0 and x.player == 1, f)
+
         for base in facilities:
+
+            attack, target, path = None, None, None
 
             # определяем количество доступных ботов
             num_cyborg = base.num_cyborg
-            
-            if DEBUG:
-                print >> sys.stderr, base, base.num_cyborg            
 
-            while num_cyborg > 0:
-                attack, target, path = None, None, None
+            while num_cyborg >  0 and len(primary_target) + len(primary_target) > 0:
 
                 if len(primary_target) > 0:
                     path = self.world.find_shortest(base, primary_target)
 
                 elif len(else_target) > 0:
                     path = self.world.find_shortest(base, else_target)
-                    
-                if DEBUG:
-                    print >> sys.stderr, base, path, base.num_cyborg
-                    
 
                 if path is not None:
 
@@ -284,30 +363,22 @@ class DummyStrategy:
 
 
                     if vertex[target] == 0:
-                        if len(primary_target) > 1:
-                            primary_target = [item for item in primary_target if item not in [target]]
+                        primary_target = [item for item in primary_target if item not in [target]]
                         else_target = [item for item in else_target if item not in [target]]
-                        cur_cyborg = cur_cyborg + num_cyborg
-                        num_cyborg = 0
+
 
                     if attack not in attacks:
                         attacks[attack] = {}
 
                     if base not in attacks[attack]:
                         attacks[attack][base] = cur_cyborg
-                    else:
-                        attacks[attack][base] = cur_cyborg + attacks[attack][base]
+
                 else:
+                    if not (attack is None or base is None):
+                        # на последнюю базу отправляем оставшихся
+                        attacks[attack][base] = attacks[attack][base] + num_cyborg
                     num_cyborg = 0
                     
-                if DEBUG:
-                    print >> sys.stderr, base, path, " - ", base.num_cyborg, num_cyborg
-            if DEBUG:
-                print >> sys.stderr, base, attacks
-        
-        if DEBUG:
-            print >> sys.stderr, attacks
-
         actions = []
         if len(attacks) == 0:
             actions.append("WAIT")
@@ -328,18 +399,13 @@ world = World()
 
 world.init()
 
-strategy = DummyStrategy(world)
+strategy = SmartStrategy(world)
 
 while True:
 
     world.update()
 
-    #strategy.find_command()
-
-    #print strategy.get_player_command()
-
-    #print world.links
-
-
     print strategy.get_actions()
+
+    break
 
