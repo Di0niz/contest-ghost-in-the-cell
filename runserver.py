@@ -288,21 +288,21 @@ class SmartStrategy(object):
             self.factories_potential[factory.entity_id] = factory.num_cyborg
 
         
-#        # корректируем потенциал баз с учетом
-#        for troop in self.world.troops:
-#            # если враг приближает к моей фабрике
-#            if troop.time_remain < 2:
-#                
-#                factory_to = self.world.factories[troop.factory_to]
-#
-#                # определяем направление удара
-#                direction = 1 if factory_to.player != troop.player else -1 
-#
-#                entity_id = troop.factory_to
-#                delta_cyborg = troop.num_cyborg * direction
-#
-#                self.factories_potential[entity_id] =\
-#                    self.factories_potential[entity_id] + delta_cyborg
+        # корректируем потенциал баз с учетом
+        for troop in self.world.troops:
+            # если враг приближает к моей фабрике
+            if troop.time_remain < 2:
+
+                factory_to = self.world.factories[troop.factory_to]
+
+                # определяем направление удара
+                direction = 1 if factory_to.player != troop.player else -1 
+
+                entity_id = troop.factory_to
+                delta_cyborg = troop.num_cyborg * direction
+
+                self.factories_potential[entity_id] =\
+                    self.factories_potential[entity_id] + delta_cyborg
 
     def calc_available_cyborgs(self):
         """Определяем возможное количество используемых ботов для каждой фабрики"""
@@ -501,9 +501,9 @@ class SmartStrategy(object):
 
         self.calc_potential()
         self.calc_available_cyborgs()
-        #print self.factories_potential[5]
-        #print self.cyborgs[5]
-        ## пока блокируем рост, так как должно быть преимущество
+        print self.factories_potential[5]
+        print self.cyborgs[5]
+        # пока блокируем рост, так как должно быть преимущество
         # над противником
         #self.factory_grow()
         #self.boombs_attack()
