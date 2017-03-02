@@ -210,7 +210,7 @@ class World(object):
         for n in goals:
             if vertex[n][0] < vertex[goal][0]:
                 goal = n
-            elif vertex[n][0] == vertex[goal][0] and n.num_cyborg < goal.num_cyborg:
+            elif vertex[n][0] == vertex[goal][0] and n.production < goal.production:
                 goal = n
 
         node = vertex[goal][1]
