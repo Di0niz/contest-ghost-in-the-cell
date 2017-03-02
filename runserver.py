@@ -66,6 +66,9 @@ class BombEntity(Entity):
         return "T%d" % self.entity_id
 # описание ламбда
 LAMBDA_EMPTY_PRODUCTION = lambda x: x.player == 0 and x.production > 0
+LAMBDA_PRODUCTION_3 = lambda x: x.player == 0 and x.production == 3
+LAMBDA_PRODUCTION_2 = lambda x: x.player == 0 and x.production == 2
+LAMBDA_PRODUCTION_1 = lambda x: x.player == 0 and x.production == 1
 LAMBDA_OTHERS = lambda x: x.player < 1 and x.production == 0
 LAMBDA_MY_ARMY = lambda x: x.player == 1 and x.num_cyborg > 0
 LAMBDA_MY_ARMY_ALL = lambda x: x.player == 1
@@ -331,19 +334,27 @@ class SmartStrategy:
             return False
 
         for base in filter(LAMBDA_MY_ARMY, self.targets):
+            
+            dist_targets = targets
+                        
+            # удаляем базы расстояние до которых больше 5
+            for target in dist_targets:
+                if self.world.calc_amount_path([base,target])>3:
+                    dist_targets = [item for item in dist_targets if item not in [target]]
 
-            do_while = base.num_cyborg > 0 and len(targets) > 0
+            do_while = base.num_cyborg > 0 and len(dist_targets) > 0
 
             while do_while:
-                path = self.world.find_shortest(base, targets)
+                path = self.world.find_shortest(base, dist_targets)
+
                 near, target = path[1], path[-1]
 
                 self.move_troop(base, near, target, min(target.num_cyborg + 1, base.num_cyborg))
 
                 if (target.num_cyborg == 0):
-                    targets = [item for item in targets if item not in [target]]
+                    dist_targets = [item for item in dist_targets if item not in [target]]
 
-                do_while = base.num_cyborg > 0 and len(targets) > 0
+                do_while = base.num_cyborg > 0 and len(dist_targets) > 0
         return True # (ActionType.ATTACK_ENEMY, args)
 
     def factory_grow (self):
@@ -353,7 +364,7 @@ class SmartStrategy:
         sum_lambda = lambda x,y: x + y.num_cyborg
         all_cyborgs = reduce(sum_lambda, factories, 0)
 
-        if all_cyborgs > 20:
+        if all_cyborgs > 30:
             for base in factories:
                 if (base.num_cyborg > 10):
                     base.num_cyborg = base.num_cyborg - 10
@@ -393,6 +404,9 @@ class SmartStrategy:
 
         targets = filter(LAMBDA_ENEMY_ARMY_ALL, self.targets)
 
+        if len(targets) == 0:
+            return
+
         for base in factories:       
             
             path = self.world.find_shortest(base, targets)
@@ -405,7 +419,9 @@ class SmartStrategy:
         """получаем цепочку действий"""
         self.factory_grow()
         self.boombs_attack()
-        self.attack_targets(filter(LAMBDA_EMPTY_PRODUCTION, self.targets))
+        self.attack_targets(filter(LAMBDA_PRODUCTION_3, self.targets))
+        self.attack_targets(filter(LAMBDA_PRODUCTION_2, self.targets))
+        self.attack_targets(filter(LAMBDA_PRODUCTION_1, self.targets))
         self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.targets))
         self.attack_targets(filter(LAMBDA_OTHERS, self.targets))
 
