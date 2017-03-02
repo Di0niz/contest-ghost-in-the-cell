@@ -16,6 +16,7 @@ class EntityType(object):
     """Описание внутриигровых объектов"""
     FACTORY = "FACTORY"
     TROOP = "TROOP"
+    BOMB = "BOMB"
 
 
 class Entity(object):
@@ -53,12 +54,27 @@ class TroopEntity(Entity):
 
     def to_str(self):
         return "T%d" % self.entity_id
+class BombEntity(Entity):
+    """Описание пехоты"""
+    def __init__(self):
+        Entity.__init__(self)
+        self.factory_from = 0
+        self.factory_to = 0
+        self.time_remain = 0
 
+    def to_str(self):
+        return "T%d" % self.entity_id
+# описание ламбда
 LAMBDA_EMPTY_PRODUCTION = lambda x: x.player == 0 and x.production > 0
+LAMBDA_OTHERS = lambda x: x.player < 1 and x.production == 0
 LAMBDA_MY_ARMY = lambda x: x.player == 1 and x.num_cyborg > 0
+LAMBDA_MY_ARMY_ALL = lambda x: x.player == 1
 LAMBDA_ENEMY_ARMY = lambda x: x.player == -1 and x.num_cyborg > 0
+LAMBDA_ENEMY_ARMY_ALL = lambda x: x.player == -1
+LAMBDA_ENEMY_ARMY_PRODUCTION = lambda x: x.player == -1 and x.num_cyborg > 0 and x.production > 2
 LAMBDA_EMPTY = lambda x: None
 LAMBDA_ZERO = lambda x: 0
+
 
 
 class World(object):
@@ -71,6 +87,8 @@ class World(object):
         self.factories = {}
         self.links = []
         self.num_factory = 0
+        self.bombs = []
+        self.num_bombs = 2
 
     def init(self):
         """ инициализируем состояние игры """
@@ -135,6 +153,14 @@ class World(object):
                 troop.entity_id = entity_id
 
                 self.troops.append(troop)
+
+            elif entity_type == EntityType.BOMB:
+                bomb = BombEntity()
+                bomb.player, bomb.factory_from, bomb.factory_to = arg_1, arg_2, arg_3
+                bomb.time_remain = arg_4
+                bomb.entity_id = entity_id
+
+                self.bombs.append(bomb)                
 
     def uniform_cost_search(self, start, goals):
         """ За основу взят алгоритм с wiki
@@ -217,6 +243,7 @@ class World(object):
             self.links.append(zero_list)
 
 
+
 # Описание стратегии для принятия решения о базе
 
 class ActionType:
@@ -242,15 +269,23 @@ class Action:
             result = True
 
 
+
+
+
+# описание продвинутой стратегии 
 class SmartStrategy:
     """ Применяемая стратегия """
     def __init__(self, world):
         self.world = world
 
+        self.targets = world.factories
+
         self.actions = []
 
         """Определяем перечень доступных евристик для стратегии"""
         self.moves = {}
+        self.grow = []
+        self.bombs = {}
 
     def move_troop(self, base, next_point, attack, num_cyborg):
         """Осуществляем передвижения киборгов"""
@@ -279,6 +314,14 @@ class SmartStrategy:
             action = "MOVE %d %d %d" % (base.entity_id, next_point.entity_id, self.moves[command])
             actions.append(action)
 
+        for base in self.grow:
+            action = "INC %d" % base.entity_id
+            actions.append(action)
+
+        for enemy in self.bombs:
+            action = "BOMB %d %d" % (self.bombs[enemy].entity_id, enemy.entity_id)
+            actions.append(action)   
+
         return actions
 
     def attack_targets(self, targets):
@@ -287,7 +330,7 @@ class SmartStrategy:
         if len(targets) == 0:
             return False
 
-        for base in filter(LAMBDA_MY_ARMY, self.world.factories):
+        for base in filter(LAMBDA_MY_ARMY, self.targets):
 
             do_while = base.num_cyborg > 0 and len(targets) > 0
 
@@ -295,20 +338,79 @@ class SmartStrategy:
                 path = self.world.find_shortest(base, targets)
                 near, target = path[1], path[-1]
 
-                self.move_troop(base, near, target, min(target.num_cyborg, base.num_cyborg))
+                self.move_troop(base, near, target, min(target.num_cyborg + 1, base.num_cyborg))
 
-                targets = [item for item in targets if item not in [target]]
+                if (target.num_cyborg == 0):
+                    targets = [item for item in targets if item not in [target]]
 
                 do_while = base.num_cyborg > 0 and len(targets) > 0
-
-
         return True # (ActionType.ATTACK_ENEMY, args)
+
+    def factory_grow (self):
+        """Фабрика растет, когда общее количество больше 30 и на одной точке больше 10"""
+
+        factories = filter(LAMBDA_MY_ARMY, self.targets)
+        sum_lambda = lambda x,y: x + y.num_cyborg
+        all_cyborgs = reduce(sum_lambda, factories, 0)
+
+        if all_cyborgs > 20:
+            for base in factories:
+                if (base.num_cyborg > 10):
+                    base.num_cyborg = base.num_cyborg - 10
+                    self.grow.append(base)
+
+    def boombs_attack(self):
+        """Бросаем бомбу только в случае, 
+        если длина хода меньше 1, армия противника больше нас,
+        если это промышленно значимый объект
+        """
+
+        if self.world.num_bombs == 0:
+            return
+
+        # потенциальная бага, если если только мои войска
+        if len(filter(LAMBDA_MY_ARMY_ALL, self.world.bombs)) > 0:
+            return
+
+        factories = filter(LAMBDA_MY_ARMY_ALL, self.targets)
+
+        enemies = filter(LAMBDA_ENEMY_ARMY_PRODUCTION, self.targets)
+
+        for base in factories:
+            for enemy in enemies:
+                if self.world.calc_amount_path([base, enemy]) == 1\
+                and base.num_cyborg <= base.num_cyborg:
+                    self.world.num_bombs = self.world.num_bombs - 1
+                    # исключаем из списка целей
+                    self.targets = [item for item in self.targets if item not in [enemy]]
+                    self.bombs[enemy] = base
+
+                    # за один ход кидаем одну бомбу
+                    return
+                    
+    def last_targets(self):
+        factories = filter(LAMBDA_MY_ARMY, self.targets)
+
+        targets = filter(LAMBDA_ENEMY_ARMY_ALL, self.targets)
+
+        for base in factories:       
+            
+            path = self.world.find_shortest(base, targets)
+            near, target = path[1], path[-1]
+            
+            self.move_troop(base, near, target, base.num_cyborg)
+
 
     def get_actions(self):
         """получаем цепочку действий"""
-        self.attack_targets(filter(LAMBDA_EMPTY_PRODUCTION, self.world.factories))
-        self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.world.factories))
-        self.attack_targets(filter(LAMBDA_EMPTY, self.world.factories))
+        self.factory_grow()
+        self.boombs_attack()
+        self.attack_targets(filter(LAMBDA_EMPTY_PRODUCTION, self.targets))
+        self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.targets))
+        self.attack_targets(filter(LAMBDA_OTHERS, self.targets))
+
+        self.last_targets()
+
 
         actions = self.parse_commands()
 
@@ -399,12 +501,12 @@ world = World()
 
 world.init()
 
-strategy = SmartStrategy(world)
 
 while True:
 
     world.update()
 
+    strategy = SmartStrategy(world)
     print strategy.get_actions()
 
     break
