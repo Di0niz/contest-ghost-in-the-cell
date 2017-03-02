@@ -198,6 +198,7 @@ class World(object):
 
                     if not (n in frontier or n in goals):
                         frontier.append(n)
+
         return vertex
 
 
@@ -208,6 +209,8 @@ class World(object):
         goal = goals[0]
         for n in goals:
             if vertex[n][0] < vertex[goal][0]:
+                goal = n
+            elif vertex[n][0] == vertex[goal][0] and n.num_cyborg < goal.num_cyborg:
                 goal = n
 
         node = vertex[goal][1]
@@ -334,9 +337,9 @@ class SmartStrategy:
             return False
 
         for base in filter(LAMBDA_MY_ARMY, self.targets):
-            
+
             dist_targets = targets
-                        
+
             # удаляем базы расстояние до которых больше 5
             for target in dist_targets:
                 if self.world.calc_amount_path([base,target])>3:
@@ -353,6 +356,7 @@ class SmartStrategy:
 
                 if (target.num_cyborg == 0):
                     dist_targets = [item for item in dist_targets if item not in [target]]
+                    targets = [item for item in targets if item not in [target]]
 
                 do_while = base.num_cyborg > 0 and len(dist_targets) > 0
         return True # (ActionType.ATTACK_ENEMY, args)
@@ -526,4 +530,3 @@ while True:
     print strategy.get_actions()
 
     break
-
