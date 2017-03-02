@@ -70,8 +70,10 @@ LAMBDA_PRODUCTION_3 = lambda x: x.player == 0 and x.production == 3
 LAMBDA_PRODUCTION_2 = lambda x: x.player == 0 and x.production == 2
 LAMBDA_PRODUCTION_1 = lambda x: x.player == 0 and x.production == 1
 LAMBDA_OTHERS = lambda x: x.player < 1 and x.production == 0
+LAMBDA_OTHERS_ALL = lambda x: x.player < 1
 LAMBDA_MY_ARMY = lambda x: x.player == 1 and x.num_cyborg > 0
 LAMBDA_MY_ARMY_ALL = lambda x: x.player == 1
+LAMBDA_MY_ARMY_PRODUCTION = lambda x: x.player == 1 and x.production > 0
 LAMBDA_ENEMY_ARMY = lambda x: x.player == -1 and x.num_cyborg > 0
 LAMBDA_ENEMY_ARMY_ALL = lambda x: x.player == -1
 LAMBDA_ENEMY_ARMY_PRODUCTION = lambda x: x.player == -1 and x.num_cyborg > 0 and x.production > 2
@@ -163,7 +165,7 @@ class World(object):
                 bomb.time_remain = arg_4
                 bomb.entity_id = entity_id
 
-                self.bombs.append(bomb)                
+                self.bombs.append(bomb)
 
     def uniform_cost_search(self, start, goals):
         """ За основу взят алгоритм с wiki
@@ -193,7 +195,7 @@ class World(object):
                     next_distance = distance + self.links[node.entity_id][n.entity_id]
 
                     # помечаем текущую вершину
-                    if n not in vertex or next_distance <= vertex[n][0]:
+                    if n not in vertex or next_distance < vertex[n][0]:
                         vertex[n] = (next_distance, node)
 
                     if not (n in frontier or n in goals):
@@ -206,18 +208,19 @@ class World(object):
         """Описание алгоритма поиска кратчайшего пути"""
         vertex = self.uniform_cost_search(start, goals)
         # востанавливаем цепочку
-        goal = goals[0]
-        for n in goals:
-            if vertex[n][0] < vertex[goal][0]:
-                goal = n
-            elif vertex[n][0] == vertex[goal][0] and n.production < goal.production:
-                goal = n
 
-        node = vertex[goal][1]
-        solution = [goal]
-        while node is not None:
-            solution.insert(0, node)
-            node = vertex[node][1]
+        min_len = 10
+        min_solution = []
+        for goal in goals:
+            solution = [goal]
+            node = vertex[goal][1]
+ 
+            while node is not None:
+                solution.insert(0, node)
+                node = vertex[node][1]
+
+            if min_len > len(solution):
+                min_solution = solution
 
         return solution
 
@@ -252,34 +255,8 @@ class World(object):
 
 # Описание стратегии для принятия решения о базе
 
-class ActionType:
-    """ Определяем список возможных действий """
-    PROBLEM_MOVE = "PROBLEM_MOVE"
-    MOVE = "MOVE"
-    ATTACK_EMPTY_BASE = "ATTACK_EMPTY_BASE"
-
-class Action:
-    """Определение действия выполняемого для объекта """
-    def __init__(self, action_from, action_to, action_method):
-        self.action_from = action_from
-        self.action_to = action_to
-        self.method = action_method
-
-    def run_method(self, kwargs):
-        result = False
-        method_result = None
-
-        if method_result is None:
-            result = False
-        else:
-            result = True
-
-
-
-
-
-# описание продвинутой стратегии 
-class SmartStrategy:
+# описание продвинутой стратегии
+class SmartStrategy(object):
     """ Применяемая стратегия """
     def __init__(self, world):
         self.world = world
@@ -293,17 +270,66 @@ class SmartStrategy:
         self.grow = []
         self.bombs = {}
 
+        # используем для ведения ограничений магические константы
+
+
+        # определяем доступные параметры
+        # на чей стороне перевес?
+
+        # определяем массив потребностей,
+        # по умолчанию равен количеству противников, которые следует побороть
+        self.factories_potential = map(LAMBDA_ZERO, xrange(world.num_factory))
+        # определяем количество доступных очков для ходов
+        self.cyborgs = map(LAMBDA_ZERO, xrange(world.num_factory))
+
+    def calc_potential(self):
+        """Расчитываем потребность в очках"""
+        for factory in filter(LAMBDA_OTHERS_ALL, self.world.factories):
+            self.factories_potential[factory.entity_id] = factory.num_cyborg
+
+        
+#        # корректируем потенциал баз с учетом
+#        for troop in self.world.troops:
+#            # если враг приближает к моей фабрике
+#            if troop.time_remain < 2:
+#                
+#                factory_to = self.world.factories[troop.factory_to]
+#
+#                # определяем направление удара
+#                direction = 1 if factory_to.player != troop.player else -1 
+#
+#                entity_id = troop.factory_to
+#                delta_cyborg = troop.num_cyborg * direction
+#
+#                self.factories_potential[entity_id] =\
+#                    self.factories_potential[entity_id] + delta_cyborg
+
+    def calc_available_cyborgs(self):
+        """Определяем возможное количество используемых ботов для каждой фабрики"""
+        for base in filter(LAMBDA_MY_ARMY, self.world.factories):
+            # расчитываем потребность
+            need_cyborg = base.num_cyborg - max(self.factories_potential[base.entity_id],0)
+            # потребность определяем не выше 0
+            self.cyborgs[base.entity_id] = max(need_cyborg, 0)
+
     def move_troop(self, base, next_point, attack, num_cyborg):
         """Осуществляем передвижения киборгов"""
-        if base.num_cyborg >= num_cyborg:
-            base.num_cyborg = base.num_cyborg - num_cyborg
-        else:
-            base.num_cyborg = 0
 
-        if attack.num_cyborg >= num_cyborg:
-            attack.num_cyborg = attack.num_cyborg - num_cyborg
+        # для своих баз уменьшаем количество доступных киборгов
+        if self.cyborgs[base.entity_id] >= num_cyborg:
+            self.cyborgs[base.entity_id] = self.cyborgs[base.entity_id] - num_cyborg
         else:
-            attack.num_cyborg = 0
+            self.cyborgs[base.entity_id] = 0
+
+        # для чужых баз, уменьшаем потребность в киборгах
+        # не меняем потребность для точки, до которой далеко
+        if next_point == attack:
+            if self.factories_potential[attack.entity_id] >= num_cyborg:
+
+                self.factories_potential[attack.entity_id] =\
+                self.factories_potential[attack.entity_id] - num_cyborg
+            else:
+                self.factories_potential[attack.entity_id] = 0
 
         key = (base, next_point)
 
@@ -326,7 +352,7 @@ class SmartStrategy:
 
         for enemy in self.bombs:
             action = "BOMB %d %d" % (self.bombs[enemy].entity_id, enemy.entity_id)
-            actions.append(action)   
+            actions.append(action)
 
         return actions
 
@@ -342,40 +368,51 @@ class SmartStrategy:
 
             # удаляем базы расстояние до которых больше 5
             for target in dist_targets:
-                if self.world.calc_amount_path([base,target])>3:
+                if self.world.calc_amount_path([base, target]) > 3:
                     dist_targets = [item for item in dist_targets if item not in [target]]
 
-            do_while = base.num_cyborg > 0 and len(dist_targets) > 0
+            do_while = self.cyborgs[base.entity_id] > 0 and len(dist_targets) > 0
 
+            # повторяем цикл
             while do_while:
                 path = self.world.find_shortest(base, dist_targets)
 
                 near, target = path[1], path[-1]
+                # определяем потребность
+                # учитываем что армия противника может рости
+                if (target.player == -1):
+                    cur_cyborg = self.factories_potential[target.entity_id] +\
+                        target.production * self.world.calc_amount_path(path) + 1
+                else:
+                    cur_cyborg = self.factories_potential[target.entity_id] + 1
 
-                self.move_troop(base, near, target, min(target.num_cyborg + 1, base.num_cyborg))
+                need_cyborg = max(min(cur_cyborg, self.cyborgs[base.entity_id]),0)
 
-                if (target.num_cyborg == 0):
+                self.move_troop(base, near, target, need_cyborg)
+
+                if self.factories_potential[target.entity_id] == 0:
                     dist_targets = [item for item in dist_targets if item not in [target]]
                     targets = [item for item in targets if item not in [target]]
 
-                do_while = base.num_cyborg > 0 and len(dist_targets) > 0
+                do_while = self.cyborgs[base.entity_id] > 0 and len(dist_targets) > 0 and cur_cyborg > 0
+
         return True # (ActionType.ATTACK_ENEMY, args)
 
-    def factory_grow (self):
+    def factory_grow(self):
         """Фабрика растет, когда общее количество больше 30 и на одной точке больше 10"""
 
         factories = filter(LAMBDA_MY_ARMY, self.targets)
-        sum_lambda = lambda x,y: x + y.num_cyborg
+        sum_lambda = lambda x, y: x + y.num_cyborg
         all_cyborgs = reduce(sum_lambda, factories, 0)
 
         if all_cyborgs > 30:
             for base in factories:
-                if (base.num_cyborg > 10):
-                    base.num_cyborg = base.num_cyborg - 10
+                if self.cyborgs[base.entity_id] > 10:
+                    self.cyborgs[base.entity_id] = self.cyborgs[base.entity_id] - 10
                     self.grow.append(base)
 
     def boombs_attack(self):
-        """Бросаем бомбу только в случае, 
+        """Бросаем бомбу только в случае,
         если длина хода меньше 1, армия противника больше нас,
         если это промышленно значимый объект
         """
@@ -402,8 +439,46 @@ class SmartStrategy:
 
                     # за один ход кидаем одну бомбу
                     return
-                    
+
+    def boombs_attack_myself(self):
+        """Бросаем бомбу в самих себя, если наступает большая
+        армия противника
+        """
+
+        if self.world.num_bombs == 0:
+            return
+
+        # потенциальная бага, если только мои войска
+        if len(filter(LAMBDA_MY_ARMY_ALL, self.world.bombs)) > 0:
+            return
+
+        max_cyborg, potential_entity_id = 7, -1
+        for entity_id in xrange(len(self.factories_potential)):
+            num_cyborg = self.factories_potential[entity_id]
+            if num_cyborg > max_cyborg:
+                max_cyborg = num_cyborg
+                potential_entity_id = entity_id
+
+        # если нашли такаю базу
+        if potential_entity_id >= 0:
+            targets = filter(LAMBDA_MY_ARMY_ALL, self.targets)
+
+            base = self.world.factories[potential_entity_id]
+            targets = [item for item in targets if item not in [base]]
+            path = self.world.find_shortest(base, targets)
+
+            if path is not None and len(path) == 2:
+                self.bombs[base] = path[1]
+
+                # потенциальные требования уменьшаем
+                self.factories_potential[base.entity_id] = 0
+                # восстанавливаем количество киборгов для распределения
+                if base.player == 1:
+                    self.cyborgs[base.entity_id] = base.num_cyborg
+
+
     def last_targets(self):
+        """Все доступные ресурсы направляем на последнюю цель"""
         factories = filter(LAMBDA_MY_ARMY, self.targets)
 
         targets = filter(LAMBDA_ENEMY_ARMY_ALL, self.targets)
@@ -411,18 +486,28 @@ class SmartStrategy:
         if len(targets) == 0:
             return
 
-        for base in factories:       
-            
+        for base in factories:
+
             path = self.world.find_shortest(base, targets)
             near, target = path[1], path[-1]
-            
-            self.move_troop(base, near, target, base.num_cyborg)
+
+            self.move_troop(base, near, target, self.cyborgs[base.entity_id])
 
 
     def get_actions(self):
         """получаем цепочку действий"""
-        self.factory_grow()
-        self.boombs_attack()
+
+        # подготавливаем данные
+
+        self.calc_potential()
+        self.calc_available_cyborgs()
+        #print self.factories_potential[5]
+        #print self.cyborgs[5]
+        ## пока блокируем рост, так как должно быть преимущество
+        # над противником
+        #self.factory_grow()
+        #self.boombs_attack()
+        #self.boombs_attack_myself()
         self.attack_targets(filter(LAMBDA_PRODUCTION_3, self.targets))
         self.attack_targets(filter(LAMBDA_PRODUCTION_2, self.targets))
         self.attack_targets(filter(LAMBDA_PRODUCTION_1, self.targets))
@@ -439,94 +524,18 @@ class SmartStrategy:
 
         return ";".join(actions)
 
-class DummyStrategy:
-    """Простая стратегия для отладки отдельных элементов"""
-    def __init__(self, world):
-        self.world = world
-
-    def get_actions(self):
-        f = self.world.factories
-
-        primary_target = filter(lambda x: x.player != 1 and x.production > 0, f) 
-        else_target = filter(lambda x: x.player != 1 and x.production == 0, f)
-        vertex = {}
-        attacks = {}
-
-        last_target = None
-
-        facilities = filter(lambda x: x.num_cyborg > 0 and x.player == 1, f)
-
-        for base in facilities:
-
-            attack, target, path = None, None, None
-
-            # определяем количество доступных ботов
-            num_cyborg = base.num_cyborg
-
-            while num_cyborg >  0 and len(primary_target) + len(primary_target) > 0:
-
-                if len(primary_target) > 0:
-                    path = self.world.find_shortest(base, primary_target)
-
-                elif len(else_target) > 0:
-                    path = self.world.find_shortest(base, else_target)
-
-                if path is not None:
-
-                    attack, target = path[1], path[-1]
-
-                    if target not in vertex:
-                        vertex[target] = target.num_cyborg + 1
-
-                    cur_cyborg = min(vertex[target], num_cyborg)
-
-                    num_cyborg = num_cyborg - cur_cyborg
-                    vertex[target] = vertex[target] - cur_cyborg
-
-
-                    if vertex[target] == 0:
-                        primary_target = [item for item in primary_target if item not in [target]]
-                        else_target = [item for item in else_target if item not in [target]]
-
-
-                    if attack not in attacks:
-                        attacks[attack] = {}
-
-                    if base not in attacks[attack]:
-                        attacks[attack][base] = cur_cyborg
-
-                else:
-                    if not (attack is None or base is None):
-                        # на последнюю базу отправляем оставшихся
-                        attacks[attack][base] = attacks[attack][base] + num_cyborg
-                    num_cyborg = 0
-                    
-        actions = []
-        if len(attacks) == 0:
-            actions.append("WAIT")
-        else:
-            for attack in attacks.keys():
-                for base in attacks[attack].keys():
-                    command = "MOVE %d %d %d" % (base.entity_id, attack.entity_id, attacks[attack][base])
-                    if DEBUG:
-                        print >> sys.stderr, command, base.num_cyborg
-                    actions.append(command)
-
-        return ";".join(actions)
-
 
 # основная часть программы
 
-world = World()
+WORLD = World()
 
-world.init()
-
+WORLD.init()
 
 while True:
 
-    world.update()
+    WORLD.update()
 
-    strategy = SmartStrategy(world)
-    print strategy.get_actions()
+    STRATEGY = SmartStrategy(WORLD)
+    print STRATEGY.get_actions()
 
     break
