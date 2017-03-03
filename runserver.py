@@ -40,6 +40,13 @@ class FactoryEntity(Entity):
         Entity.__init__(self)
         self.num_cyborg = 0
         self.production = 0
+        # количество доступных киборгов для хода
+        self.av_cyborg = 0
+        # количество противников в следующие ходы
+        # ограничиваем прогноз ходов следующими 5 ходами
+        self.enemy_cyborgs = [0, 0, 0, 0, 0]
+        # количество дополнительных солдат в следующие
+        self.army_cyborgs = [0, 0, 0, 0, 0]
     def to_str(self):
         return "F%d" % self.entity_id
 
@@ -65,7 +72,7 @@ class BombEntity(Entity):
     def to_str(self):
         return "T%d" % self.entity_id
 # описание ламбда
-LAMBDA_EMPTY_PRODUCTION = lambda x: x.player == 0 and x.production > 0
+LAMBDA_PRODUCTION = lambda x: x.player == 0 and x.production > 0
 LAMBDA_PRODUCTION_3 = lambda x: x.player == 0 and x.production == 3
 LAMBDA_PRODUCTION_2 = lambda x: x.player == 0 and x.production == 2
 LAMBDA_PRODUCTION_1 = lambda x: x.player == 0 and x.production == 1
@@ -79,6 +86,16 @@ LAMBDA_ENEMY_ARMY_ALL = lambda x: x.player == -1
 LAMBDA_ENEMY_ARMY_PRODUCTION = lambda x: x.player == -1 and x.num_cyborg > 0 and x.production > 2
 LAMBDA_EMPTY = lambda x: None
 LAMBDA_ZERO = lambda x: 0
+
+REDUCE_PRODUCTION = lambda a, x: x if (a is None\
+or a.production == 3\
+or a.production == 3\
+or a.production < x.production)\
+and x.production < 3 else a
+
+REDUCE_CYBORG_FOR_PRODUCTION = lambda a, x: x if (a is None \
+or a.num_cyborg < x.num_cyborg)\
+and x.production < 3 and a.production < 3 else a
 
 
 
@@ -102,8 +119,6 @@ class World(object):
 
         # создаем пустой массив
         self.factories = map(LAMBDA_EMPTY, xrange(self.num_factory))
-
-
         # отображение вложенных данных
         if DEBUG:
             print >> sys.stderr, self.num_factory
@@ -115,6 +130,7 @@ class World(object):
             raw = raw_input()
             if DEBUG:
                 print >> sys.stderr, raw
+
             factory_1, factory_2, distance = [int(j) for j in raw.split()]
 
             # определение данных для отображение
@@ -133,6 +149,7 @@ class World(object):
             raw = raw_input()
             if DEBUG:
                 print >> sys.stderr, raw
+
             entity_id, entity_type, arg_1, arg_2, arg_3, arg_4, arg_5 = raw.split()
             entity_id = int(entity_id)
             arg_1 = int(arg_1)
@@ -149,7 +166,13 @@ class World(object):
                     self.factories[entity_id] = factory
                 factory.entity_id = entity_id
                 factory.player, factory.num_cyborg, factory.production = arg_1, arg_2, arg_3
+                if factory.player == 1:
+                    factory.av_cyborg = factory.num_cyborg
+                else:
+                    factory.av_cyborg = 0
 
+                factory.enemy_cyborgs = [0, 0, 0, 0, 0]
+                factory.army_cyborgs = [0, 0, 0, 0, 0]
 
             elif entity_type == EntityType.TROOP:
                 troop = TroopEntity()
@@ -279,8 +302,17 @@ class SmartStrategy(object):
         # определяем массив потребностей,
         # по умолчанию равен количеству противников, которые следует побороть
         self.factories_potential = map(LAMBDA_ZERO, xrange(world.num_factory))
+
         # определяем количество доступных очков для ходов
         self.cyborgs = map(LAMBDA_ZERO, xrange(world.num_factory))
+
+        # для каждого игрока определяем его силу
+        # начальное значение как 0
+        self.player_production = {-1:0, 0:0, 1:0}
+
+        # определяем мощность армии каждого игрока
+        # начальное значение как 0
+        self.player_cyborg = {-1:0, 0:0, 1:0}
 
     def calc_potential(self):
         """Расчитываем потребность в очках"""
@@ -311,6 +343,17 @@ class SmartStrategy(object):
             need_cyborg = base.num_cyborg - max(self.factories_potential[base.entity_id],0)
             # потребность определяем не выше 0
             self.cyborgs[base.entity_id] = max(need_cyborg, 0)
+    def calc_production(self):
+        """Расчитываем мощность производства"""
+        pp = self.player_production
+        for factory in self.world.factories:
+            pp[factory.player] = pp[factory.player] + factory.production
+    def calc_cyborgs(self):
+        """Расчитываем сумму всех войск в армии"""
+        p_cyborg = self.player_cyborg
+
+        for factory in self.world.factories + self.world.troops:
+            p_cyborg[factory.player] = p_cyborg[factory.player] + factory.num_cyborg
 
     def move_troop(self, base, next_point, attack, num_cyborg):
         """Осуществляем передвижения киборгов"""
@@ -493,28 +536,60 @@ class SmartStrategy(object):
 
             self.move_troop(base, near, target, self.cyborgs[base.entity_id])
 
+    
+    def prepare(self):
+        """Делаем первый проход стратегии"""
+        self.calc_production()
+        self.calc_cyborgs()
+        self.calc_potential()
+        self.calc_available_cyborgs()
+
+    def update(self):
+        """Обновляем полученные результаты"""
+        pass
+
+    def solve_find_empty_base(self):
+        """решаем проблему не занятых баз"""
+
+        if self.player_production[0] > 0:
+            self.attack_targets(filter(LAMBDA_PRODUCTION_3, self.targets))
+            self.attack_targets(filter(LAMBDA_PRODUCTION_2, self.targets))
+            self.attack_targets(filter(LAMBDA_PRODUCTION_1, self.targets))
+
+    def solve_grow_base(self):
+
+        pp = self.player_production
+        # однозначно когда нет возможности роста
+        if pp[-1] >= pp[1] and pp[0] == 0:
+
+            # определяем есть ли возможность вырасти сейчас
+            factory = reduce(REDUCE_CYBORG_FOR_PRODUCTION,\
+            map(LAMBDA_MY_ARMY_PRODUCTION, self.targets))
+
+            if factory is not None and factory.num_cyborg > 10:
+                self.grow.append(factory)
+
 
     def get_actions(self):
         """получаем цепочку действий"""
 
         # подготавливаем данные
 
-        self.calc_potential()
-        self.calc_available_cyborgs()
-        print self.factories_potential[5]
-        print self.cyborgs[5]
+        self.prepare()
+
+        self.solve_find_empty_base()
+
         # пока блокируем рост, так как должно быть преимущество
         # над противником
         #self.factory_grow()
         #self.boombs_attack()
         #self.boombs_attack_myself()
-        self.attack_targets(filter(LAMBDA_PRODUCTION_3, self.targets))
-        self.attack_targets(filter(LAMBDA_PRODUCTION_2, self.targets))
-        self.attack_targets(filter(LAMBDA_PRODUCTION_1, self.targets))
-        self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.targets))
-        self.attack_targets(filter(LAMBDA_OTHERS, self.targets))
-
-        self.last_targets()
+        #self.attack_targets(filter(LAMBDA_PRODUCTION_3, self.targets))
+        #self.attack_targets(filter(LAMBDA_PRODUCTION_2, self.targets))
+        #self.attack_targets(filter(LAMBDA_PRODUCTION_1, self.targets))
+        #self.attack_targets(filter(LAMBDA_ENEMY_ARMY, self.targets))
+        #self.attack_targets(filter(LAMBDA_OTHERS, self.targets))
+        #self.last_targets()
 
 
         actions = self.parse_commands()
